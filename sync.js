@@ -1,79 +1,99 @@
-/* Kfitnes · синхронизация с приватным репозиторием GitHub (файл data.json)
-   Логика простая: у данных есть отметка времени updated.
-   Кто новее (телефон или GitHub), тот и прав. Первое подключение объединяет обе стороны. */
-const GH_KEY = 'kfitnes-gh';
-const GH_FILE = 'data.json';
-let gh = (() => { try { return JSON.parse(localStorage.getItem(GH_KEY)) || null; } catch { return null; } })();
-let pushT = 0, busy = false, dirty = false;
+/* Kfitnes · синхронизация с сервером KFitness (база Cloudflare)
+   ------------------------------------------------------------------
+   Логика та же, что была с GitHub: у данных есть отметка времени updated.
+   Кто новее — тот и прав. Первое подключение объединяет обе стороны.
 
-const ghSave = () => gh ? localStorage.setItem(GH_KEY, JSON.stringify(gh)) : localStorage.removeItem(GH_KEY);
+   Было:  data.json в приватном репозитории GitHub.
+   Стало: /api/state на сервере. Приложение работает «от имени» того,
+          чей код введён при входе. Тренер может переключиться на клиента. */
 
-/* base64 ⇄ UTF-8 (кириллица) */
-const b64enc = str => { const b = new TextEncoder().encode(str); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(s); };
-const b64dec = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g, '')), c => c.charCodeAt(0)));
+let busy = false, dirty = false, pushT = 0;
+let who = null;              // { id, name, code, role } — чей профиль открыт
+let viewId = null;           // у тренера — id клиента, которого смотрим
+let lastSync = 0, lastErr = '';
 
-async function ghApi(path, opt = {}) {
-  const r = await fetch(`https://api.github.com/repos/${encodeURIComponent(gh.owner)}/${encodeURIComponent(gh.repo)}${path}`, {
-    ...opt, cache: 'no-store',
-    headers: { Authorization: `Bearer ${gh.token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(opt.body ? { 'Content-Type': 'application/json' } : {}) }
+/* ─────────── доступ к серверу ─────────── */
+
+const withView = (url) => viewId ? url + (url.includes('?') ? '&' : '?') + 'client=' + encodeURIComponent(viewId) : url;
+
+async function api(path, opt = {}) {
+  const r = await fetch(path, {
+    ...opt,
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json', ...(opt.headers || {}) }
   });
-  if (r.status === 404) return null;
-  if (!r.ok) {
-    const e = new Error(r.status === 401 ? 'Ключ неверный или истёк' : r.status === 403 ? 'У ключа нет доступа к репозиторию (нужно Contents: Read and write)' : `GitHub ответил ${r.status}`);
-    e.status = r.status; throw e;
-  }
-  return r.json();
+  if (r.status === 401) { location.href = '/'; throw new Error('Нужен вход'); }
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || ('Сервер ответил ' + r.status));
+  return d;
 }
 
-/* Данные для облака: без выбранных вкладок (это настройки конкретного телефона) */
-const cloudCopy = () => { const { sel, ...rest } = state; return rest; };
+/* ─────────── чтение и запись ─────────── */
 
 async function pull() {
-  const f = await ghApi(`/contents/${GH_FILE}`);
-  if (!f) return null;
-  gh.sha = f.sha;
-  const text = f.content ? b64dec(f.content) : await (await fetch(f.download_url, { cache: 'no-store' })).text();
-  return normalize(JSON.parse(text));
+  const d = await api(withView('/api/state'));
+  who = d.client || who;
+  return d.state ? normalize(d.state) : null;
 }
 
 async function push() {
-  const body = { message: `Kfitnes · ${new Date().toLocaleString('ru-RU')}`, content: b64enc(JSON.stringify(cloudCopy(), null, 1)) };
-  if (gh.sha) body.sha = gh.sha;
-  try {
-    const r = await ghApi(`/contents/${GH_FILE}`, { method: 'PUT', body: JSON.stringify(body) });
-    gh.sha = r.content.sha;
-  } catch (e) {
-    // Файл поменялся на другом устройстве → берём свежий sha и пробуем ещё раз
-    if (e.status === 409 || e.status === 422) { await pull(); body.sha = gh.sha; const r = await ghApi(`/contents/${GH_FILE}`, { method: 'PUT', body: JSON.stringify(body) }); gh.sha = r.content.sha; }
-    else throw e;
-  }
+  const { sel, ...rest } = state;
+  await api(withView('/api/state'), {
+    method: 'POST',
+    body: JSON.stringify({ state: rest })
+  });
 }
 
-/* Объединение при первом подключении: планы по id, веса с обеих сторон (телефон главнее) */
+/* ─────────── объединение при первом подключении ─────────── */
+
 function mergeStates(local, remote) {
   const out = normalize({ ...remote, sel: local.sel });
-  KINDS.forEach(k => { local[k].forEach(p => { if (!out[k].some(x => x.id === p.id)) out[k].push(p); }); sortPlans(out[k]); });
+  KINDS.forEach(k => {
+    const byId = new Map();
+    remote[k].forEach(p => byId.set(p.id, p));
+    local[k].forEach(p => {
+      const r = byId.get(p.id);
+      if (!r) byId.set(p.id, p);        // есть только на телефоне → берём
+    });
+    out[k] = sortPlans([...byId.values()]);
+  });
+  // веса: телефон главнее
   out.logs = { ...remote.logs, ...local.logs };
-  out.updated = Date.now();
   return out;
 }
 
+/* ─────────── главный цикл синхронизации ─────────── */
+
 async function syncNow(silent) {
-  if (!gh || busy) { dirty = !!gh; return; }
-  busy = true; dirty = false; setSyncUi('Синхронизация…');
+  if (busy) { dirty = true; return; }
+  busy = true; dirty = false;
+  setSyncUi('Синхронизация…');
   try {
+    const first = !lastSync;
     const remote = await pull();
-    const first = !gh.last;
-    if (!remote) await push();                                   // в репозитории пусто → отправляем своё
-    else if (first) { state = mergeStates(state, remote); saveLocalOnly(); await push(); renderAll(); }
-    else if (remote.updated > state.updated) { state = normalize({ ...remote, sel: state.sel }); saveLocalOnly(); renderAll(); }
-    else if (remote.updated < state.updated) await push();
-    gh.last = Date.now(); gh.err = ''; ghSave();
+
+    if (!remote) {
+      await push();
+    } else if (first) {
+      state = mergeStates(state, remote);
+      saveLocalOnly();
+      await push();
+      renderAll();
+    } else if ((remote.updated || 0) > (state.updated || 0)) {
+      state = normalize({ ...remote, sel: state.sel });
+      saveLocalOnly();
+      renderAll();
+    } else if ((remote.updated || 0) < (state.updated || 0)) {
+      await push();
+    }
+
+    lastSync = Date.now(); lastErr = '';
     setSyncUi();
-    if (!silent) toast('Синхронизировано с GitHub');
+    if (!silent) toast('Сохранено');
   } catch (e) {
-    gh.err = e.message || 'Нет связи'; ghSave(); setSyncUi();
-    if (!silent) toast('GitHub: ' + gh.err);
+    lastErr = e.message || 'Нет связи';
+    setSyncUi();
+    if (!silent) toast('Связь: ' + lastErr);
   }
   busy = false;
   if (dirty) syncNow(true);
@@ -86,45 +106,118 @@ function saveLocalOnly() {
   idb.set(STORE, json).catch(() => {});
 }
 
-/* Вызывается из save(): через 2 с после последнего изменения отправляем в облако */
+/* Вызывается из save(): через 2 с после последнего изменения — в облако */
 function onDataChanged() {
-  if (!gh) return;
   clearTimeout(pushT);
   setSyncUi('Есть несохранённые изменения…');
-  pushT = setTimeout(() => syncNow(true), 2000);
+  pushT = setTimeout(() => { pushT = 0; syncNow(true); }, 2000);
 }
+
 document.addEventListener('visibilitychange', () => {
-  if (!gh) return;
   if (document.hidden && pushT) { clearTimeout(pushT); pushT = 0; syncNow(true); }
-  else if (!document.hidden) syncNow(true);                   // вернулся в приложение → подтянуть свежее
+  else if (!document.hidden) syncNow(true);
 });
 
-/* ---- интерфейс ---- */
-const ago = t => { if (!t) return 'ещё не было'; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'только что' : m < 60 ? `${m} мин назад` : new Date(t).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); };
+/* ─────────── интерфейс ─────────── */
+
+const ago = (t) => {
+  if (!t) return 'ещё не было';
+  const m = Math.round((Date.now() - t) / 60000);
+  return m < 1 ? 'только что'
+    : m < 60 ? `${m} мин назад`
+    : new Date(t).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+};
+
 function setSyncUi(msg) {
-  const txt = !gh ? 'Не подключено · данные только на этом iPhone'
-    : msg || (gh.err ? `⚠️ ${gh.err}` : `✓ ${gh.owner}/${gh.repo} · ${ago(gh.last)}`);
-  const el = $('#sync-state'); if (el) el.textContent = txt;
-  $('#sync-off').hidden = !!gh; $('#sync-on').hidden = !gh;
-  if (gh) { $('#sync-repo').textContent = `${gh.owner}/${gh.repo}`; $('#sync-last').textContent = msg || (gh.err ? `⚠️ ${gh.err}` : `Последняя синхронизация: ${ago(gh.last)}`); }
+  const txt = lastErr
+    ? '⚠️ ' + lastErr
+    : msg || (who ? `${who.name} · ${ago(lastSync)}` : 'Синхронизация…');
+
+  const st = $('#sync-state'); if (st) st.textContent = txt;
+  const rep = $('#sync-repo'); if (rep && who) rep.textContent = who.name;
+  const lst = $('#sync-last');
+  if (lst) lst.textContent = lastErr ? '⚠️ ' + lastErr : 'Последняя синхронизация: ' + ago(lastSync);
 }
 
-$('#btn-sync').onclick = () => { setSyncUi(); openSheet('#sheet-sync'); };
-$('#gh-connect').onclick = async () => {
-  const owner = $('#gh-owner').value.trim().replace(/^@/, '');
-  const repo = $('#gh-repo').value.trim();
-  const token = $('#gh-token').value.trim();
-  if (!owner || !repo || !token) return toast('Заполни все три поля');
-  gh = { owner, repo, token };
-  const btn = $('#gh-connect'); btn.disabled = true; btn.textContent = 'Проверяю…';
+/* ─────────── шапка: кто я и переключение клиентов ─────────── */
+
+function renderWho() {
+  const box = $('#who-box'); if (!box || !who) return;
+  const trainers = who.role === 'trainer';
+  box.hidden = false;
+  box.innerHTML =
+    '<span class="who-name">' + esc(who.name) + (trainers ? ' · тренер' : '') + '</span>' +
+    '<button class="who-out" id="who-out">Выйти</button>';
+
+  const btn = $('#who-out');
+  if (btn) btn.onclick = async () => {
+    await fetch('/logout', { method: 'POST' }).catch(() => {});
+    location.href = '/';
+  };
+}
+
+/* Загружаем, кто мы, и если тренер — список людей */
+async function initWho() {
   try {
-    const info = await ghApi('');
-    if (!info) throw new Error('Репозиторий не найден. Проверь логин и название');
-    if (!info.private) throw new Error('Репозиторий публичный. Сделай его Private в настройках');
-    ghSave(); $('#gh-token').value = '';
-    await syncNow();
-  } catch (e) { gh = null; ghSave(); toast(e.message); }
-  btn.disabled = false; btn.textContent = 'Подключить'; setSyncUi();
-};
-$('#gh-now').onclick = () => syncNow();
-$('#gh-off').onclick = () => { gh = null; ghSave(); setSyncUi(); toast('Отключено. Данные на телефоне остались'); };
+    const d = await api('/me');
+    who = d.client;
+    renderWho();
+    if (who.role !== 'trainer') return;
+
+    const c = await api('/clients');
+    const list = (c.clients || []).filter(x => x.role !== 'trainer');
+    if (!list.length) return;
+    viewId = list[0].id;                 // тренер сразу смотрит первого клиента
+    renderSwitcher(list);
+    who = list[0];
+    renderWho();
+  } catch (e) { /* выбросит на вход через api() */ }
+}
+
+function renderSwitcher(list) {
+  const box = $('#switch-box'); if (!box) return;
+  box.hidden = false;
+  box.innerHTML = '<div class="sw-label">Клиент</div><div class="sw-chips">' +
+    list.map(c => '<button class="sw-chip' + (c.id === viewId ? ' on' : '') +
+      '" data-id="' + esc(c.id) + '">' + esc(c.name) + '</button>').join('') +
+    '</div>';
+  box.onclick = (e) => {
+    const b = e.target.closest('.sw-chip'); if (!b) return;
+    viewId = b.dataset.id;
+    who = list.find(x => x.id === viewId) || who;
+    lastSync = 0;
+    initWho();
+    syncNow(true);
+    vibrate(8);
+  };
+}
+
+/* ─────────── окно синхронизации (вместо GitHub) ─────────── */
+
+const sheetSync = $('#sheet-sync');
+if (sheetSync) {
+  sheetSync.innerHTML =
+    '<div class="sheet-body">' +
+      '<div class="grab" aria-hidden="true"></div>' +
+      '<header class="sheet-head">' +
+        '<button class="x" data-close aria-label="Назад">‹</button>' +
+        '<h2>Синхронизация</h2><span class="spacer"></span>' +
+      '</header>' +
+      '<p class="hint">Данные хранятся на сервере KFitness и привязаны к твоему коду. ' +
+        'Заходи с любого телефона — программы и веса будут на месте.</p>' +
+      '<div class="field"><span>Профиль</span><b id="sync-repo">—</b></div>' +
+      '<p class="hint" id="sync-last"></p>' +
+      '<button class="btn full" id="sync-now">Синхронизировать сейчас</button>' +
+      '<p class="hint center" id="app-ver"></p>' +
+    '</div>';
+
+  const go = $('#sync-now');
+  if (go) go.onclick = () => { syncNow(false); vibrate(10); };
+}
+
+/* ─────────── старт ─────────── */
+
+async function initSync() {
+  await initWho();
+  await syncNow(true);
+}
