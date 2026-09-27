@@ -1,11 +1,7 @@
 /* Kfitnes · синхронизация с сервером KFitness (база Cloudflare)
    ------------------------------------------------------------------
    Логика та же, что была с GitHub: у данных есть отметка времени updated.
-   Кто новее — тот и прав. Первое подключение объединяет обе стороны.
-
-   Было:  data.json в приватном репозитории GitHub.
-   Стало: /api/state на сервере. Приложение работает «от имени» того,
-          чей код введён при входе. Тренер может переключиться на клиента. */
+   Кто новее — тот и прав. Первое подключение объединяет обе стороны. */
 
 let busy = false, dirty = false, pushT = 0;
 let who = null;              // { id, name, code, role } — чей профиль открыт
@@ -14,7 +10,9 @@ let lastSync = 0, lastErr = '';
 
 /* ─────────── доступ к серверу ─────────── */
 
-const withView = (url) => viewId ? url + (url.includes('?') ? '&' : '?') + 'client=' + encodeURIComponent(viewId) : url;
+const withView = (url) => viewId
+  ? url + (url.includes('?') ? '&' : '?') + 'client=' + encodeURIComponent(viewId)
+  : url;
 
 async function api(path, opt = {}) {
   const r = await fetch(path, {
@@ -51,13 +49,9 @@ function mergeStates(local, remote) {
   KINDS.forEach(k => {
     const byId = new Map();
     remote[k].forEach(p => byId.set(p.id, p));
-    local[k].forEach(p => {
-      const r = byId.get(p.id);
-      if (!r) byId.set(p.id, p);        // есть только на телефоне → берём
-    });
+    local[k].forEach(p => { if (!byId.get(p.id)) byId.set(p.id, p); });
     out[k] = sortPlans([...byId.values()]);
   });
-  // веса: телефон главнее
   out.logs = { ...remote.logs, ...local.logs };
   return out;
 }
@@ -99,14 +93,12 @@ async function syncNow(silent) {
   if (dirty) syncNow(true);
 }
 
-/* Сохранить на телефоне, не запуская новую отправку */
 function saveLocalOnly() {
   const json = JSON.stringify(state);
   try { localStorage.setItem(STORE, json); } catch {}
   idb.set(STORE, json).catch(() => {});
 }
 
-/* Вызывается из save(): через 2 с после последнего изменения — в облако */
 function onDataChanged() {
   clearTimeout(pushT);
   setSyncUi('Есть несохранённые изменения…');
@@ -129,8 +121,7 @@ const ago = (t) => {
 };
 
 function setSyncUi(msg) {
-  const txt = lastErr
-    ? '⚠️ ' + lastErr
+  const txt = lastErr ? '⚠️ ' + lastErr
     : msg || (who ? `${who.name} · ${ago(lastSync)}` : 'Синхронизация…');
 
   const st = $('#sync-state'); if (st) st.textContent = txt;
@@ -139,16 +130,14 @@ function setSyncUi(msg) {
   if (lst) lst.textContent = lastErr ? '⚠️ ' + lastErr : 'Последняя синхронизация: ' + ago(lastSync);
 }
 
-/* ─────────── шапка: кто я и переключение клиентов ─────────── */
+/* ─────────── шапка: кто я ─────────── */
 
 function renderWho() {
   const box = $('#who-box'); if (!box || !who) return;
-  const trainers = who.role === 'trainer';
   box.hidden = false;
   box.innerHTML =
-    '<span class="who-name">' + esc(who.name) + (trainers ? ' · тренер' : '') + '</span>' +
+    '<span class="who-name">' + esc(who.name) + (who.role === 'trainer' ? ' · тренер' : '') + '</span>' +
     '<button class="who-out" id="who-out">Выйти</button>';
-
   const btn = $('#who-out');
   if (btn) btn.onclick = async () => {
     await fetch('/logout', { method: 'POST' }).catch(() => {});
@@ -156,22 +145,22 @@ function renderWho() {
   };
 }
 
-/* Загружаем, кто мы, и если тренер — список людей */
-async function initWho() {
-  try {
-    const d = await api('/me');
-    who = d.client;
-    renderWho();
-    if (who.role !== 'trainer') return;
+/* ─────────── кто мы + список клиентов для тренера ─────────── */
 
-    const c = await api('/clients');
-    const list = (c.clients || []).filter(x => x.role !== 'trainer');
-    if (!list.length) return;
-    viewId = list[0].id;                 // тренер сразу смотрит первого клиента
-    renderSwitcher(list);
-    who = list[0];
-    renderWho();
-  } catch (e) { /* выбросит на вход через api() */ }
+async function initWho() {
+  const d = await api('/me');
+  who = d.client;
+
+  if (who.role !== 'trainer') { renderWho(); return; }
+
+  const c = await api('/clients');
+  const list = (c.clients || []).filter(x => x.role !== 'trainer');
+  if (!list.length) { renderWho(); return; }
+
+  if (!viewId || !list.some(x => x.id === viewId)) viewId = list[0].id;
+  who = list.find(x => x.id === viewId);
+  renderWho();
+  renderSwitcher(list);
 }
 
 function renderSwitcher(list) {
@@ -185,14 +174,15 @@ function renderSwitcher(list) {
     const b = e.target.closest('.sw-chip'); if (!b) return;
     viewId = b.dataset.id;
     who = list.find(x => x.id === viewId) || who;
+    renderWho();
+    [...box.querySelectorAll('.sw-chip')].forEach(x => x.classList.toggle('on', x === b));
     lastSync = 0;
-    initWho();
     syncNow(true);
     vibrate(8);
   };
 }
 
-/* ─────────── окно синхронизации (вместо GitHub) ─────────── */
+/* ─────────── окно «Синхронизация» вместо GitHub ─────────── */
 
 const sheetSync = $('#sheet-sync');
 if (sheetSync) {
@@ -208,14 +198,12 @@ if (sheetSync) {
       '<div class="field"><span>Профиль</span><b id="sync-repo">—</b></div>' +
       '<p class="hint" id="sync-last"></p>' +
       '<button class="btn full" id="sync-now">Синхронизировать сейчас</button>' +
-      '<p class="hint center" id="app-ver"></p>' +
     '</div>';
-
   const go = $('#sync-now');
   if (go) go.onclick = () => { syncNow(false); vibrate(10); };
 }
 
-/* ─────────── старт ─────────── */
+/* ─────────── старт (зовётся из start.js) ─────────── */
 
 async function initSync() {
   await initWho();
