@@ -197,3 +197,18 @@ body:not([data-screen="train"]) #fab-timer{display:none!important}
 .sync-card span{color:var(--mut);font-size:13px}
 .btn.full + .btn.full{margin-top:10px}
 .btn:disabled{opacity:.6}
+/* Шапка: кто я и переключение клиентов */
+.who-box{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  max-width:640px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 10px) 16px 4px}
+.who-name{color:#8d8d93;font-size:13px;font-weight:600;letter-spacing:.02em}
+.who-out{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:#8d8d93;
+  border-radius:10px;padding:7px 12px;font-size:12px;font-weight:600}
+.switch-box{max-width:640px;margin:0 auto;padding:6px 16px 0}
+.sw-label{color:#8d8d93;font-size:11px;font-weight:800;letter-spacing:.16em;
+  text-transform:uppercase;margin-bottom:8px}
+.sw-chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:6px}
+.sw-chips::-webkit-scrollbar{display:none}
+.sw-chip{flex:none;padding:8px 14px;border-radius:99px;background:rgba(255,255,255,.045);
+  border:1px solid rgba(255,255,255,.09);color:#cfcfd4;font-size:14px;font-weight:600;white-space:nowrap}
+.sw-chip.on{background:linear-gradient(135deg,#ff4d5e 0%,#e0112b 55%,#8a0016 100%);
+  border-color:transparent;color:#fff;box-shadow:0 6px 20px rgba(255,30,60,.35)}
