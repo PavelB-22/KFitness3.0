@@ -1,5 +1,5 @@
 /* Офлайн-кэш. Данные сервера не кэшируем, чтобы профили не смешивались. */
-const CACHE = 'kfitnes-v3.2';
+const CACHE = 'kfitnes-v3.3';
 const NO_CACHE = ['/login', '/logout', '/me', '/clients', '/analytics', '/api/'];
 const FILES = [
   './', './index.html', './login.html', './style.css?v=3.2',
