@@ -1,16 +1,16 @@
-/* Kfitnes · синхронизация с сервером KFitness (база Cloudflare)
-   ------------------------------------------------------------------
-   Логика та же, что была с GitHub: у данных есть отметка времени updated.
-   Кто новее — тот и прав. Первое подключение объединяет обе стороны. */
+/* Kfitnes · синхронизация с облаком KFitness (Cloudflare) */
 
 let busy = false, dirty = false, pushT = 0;
-let who = null;              // { id, name, code, role } — чей профиль открыт
-let viewId = null;           // у тренера — id клиента, которого смотрим
+let who = null;          // кто вошёл: { id, name, code, role }
+let viewId = null;       // тренер: id открытого клиента
+let viewName = '';       // тренер: имя открытого клиента
 let lastSync = 0, lastErr = '';
 
-/* ─────────── доступ к серверу ─────────── */
+const isTrainer = () => !!(who && who.role === 'trainer');
+/* тренеру синхронизировать нечего, пока он не открыл клиента */
+const canSync = () => !!who && (!isTrainer() || !!viewId);
 
-const withView = (url) => viewId
+const withView = url => viewId
   ? url + (url.includes('?') ? '&' : '?') + 'client=' + encodeURIComponent(viewId)
   : url;
 
@@ -26,39 +26,36 @@ async function api(path, opt = {}) {
   return d;
 }
 
-/* ─────────── чтение и запись ─────────── */
-
 async function pull() {
   const d = await api(withView('/api/state'));
-  who = d.client || who;
   return d.state ? normalize(d.state) : null;
 }
 
 async function push() {
   const { sel, ...rest } = state;
-  await api(withView('/api/state'), {
-    method: 'POST',
-    body: JSON.stringify({ state: rest })
-  });
+  await api(withView('/api/state'), { method: 'POST', body: JSON.stringify({ state: rest }) });
 }
 
-/* ─────────── объединение при первом подключении ─────────── */
-
+/* первое подключение: объединяем телефон и облако */
 function mergeStates(local, remote) {
   const out = normalize({ ...remote, sel: local.sel });
   KINDS.forEach(k => {
     const byId = new Map();
     remote[k].forEach(p => byId.set(p.id, p));
-    local[k].forEach(p => { if (!byId.get(p.id)) byId.set(p.id, p); });
+    local[k].forEach(p => { if (!byId.has(p.id)) byId.set(p.id, p); });
     out[k] = sortPlans([...byId.values()]);
   });
   out.logs = { ...remote.logs, ...local.logs };
+
+  const byDate = new Map();
+  (remote.measurements || []).forEach(m => m && m.date && byDate.set(m.date, m));
+  (local.measurements || []).forEach(m => { if (m && m.date && !byDate.has(m.date)) byDate.set(m.date, m); });
+  out.measurements = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
   return out;
 }
 
-/* ─────────── главный цикл синхронизации ─────────── */
-
 async function syncNow(silent) {
+  if (!canSync()) return;
   if (busy) { dirty = true; return; }
   busy = true; dirty = false;
   setSyncUi('Синхронизация…');
@@ -99,20 +96,21 @@ function saveLocalOnly() {
   idb.set(STORE, json).catch(() => {});
 }
 
+/* вызывается из save() в core.js */
 function onDataChanged() {
+  if (!canSync()) return;
   clearTimeout(pushT);
   setSyncUi('Есть несохранённые изменения…');
   pushT = setTimeout(() => { pushT = 0; syncNow(true); }, 2000);
 }
 
 document.addEventListener('visibilitychange', () => {
+  if (!canSync()) return;
   if (document.hidden && pushT) { clearTimeout(pushT); pushT = 0; syncNow(true); }
   else if (!document.hidden) syncNow(true);
 });
 
-/* ─────────── интерфейс ─────────── */
-
-const ago = (t) => {
+const ago = t => {
   if (!t) return 'ещё не было';
   const m = Math.round((Date.now() - t) / 60000);
   return m < 1 ? 'только что'
@@ -121,69 +119,65 @@ const ago = (t) => {
 };
 
 function setSyncUi(msg) {
-  const txt = lastErr ? '⚠️ ' + lastErr
-    : msg || (who ? `${who.name} · ${ago(lastSync)}` : 'Синхронизация…');
-
+  const name = viewName || (who && who.name) || '';
+  const txt = lastErr ? '⚠️ ' + lastErr : msg || (name ? `${name} · ${ago(lastSync)}` : 'Синхронизация…');
   const st = $('#sync-state'); if (st) st.textContent = txt;
-  const rep = $('#sync-repo'); if (rep && who) rep.textContent = who.name;
+  const rep = $('#sync-repo'); if (rep && name) rep.textContent = name;
   const lst = $('#sync-last');
   if (lst) lst.textContent = lastErr ? '⚠️ ' + lastErr : 'Последняя синхронизация: ' + ago(lastSync);
 }
 
-/* ─────────── шапка: кто я ─────────── */
+/* ───── шапка: справа вверху «Выйти», под кнопкой имя ───── */
+function renderTopbar() {
+  let bar = $('#topbar');
+  if (!bar) {
+    bar = document.createElement('header');
+    bar.id = 'topbar';
+    bar.className = 'topbar';
+    bar.innerHTML =
+      '<div class="topbar-right">' +
+        '<button class="out" id="who-out" type="button">Выйти</button>' +
+        '<div class="who-name" id="who-name"></div>' +
+        '<div class="who-view" id="who-view" hidden></div>' +
+      '</div>';
+    document.body.appendChild(bar);
+    $('#who-out').onclick = async () => {
+      try { await fetch('/logout', { method: 'POST' }); } catch (e) {}
+      location.href = '/login.html';
+    };
+  }
 
-function renderWho() {
-  const box = $('#who-box'); if (!box || !who) return;
-  box.hidden = false;
-  box.innerHTML =
-    '<span class="who-name">' + esc(who.name) + (who.role === 'trainer' ? ' · тренер' : '') + '</span>' +
-    '<button class="who-out" id="who-out">Выйти</button>';
-  const btn = $('#who-out');
-  if (btn) btn.onclick = async () => {
-    await fetch('/logout', { method: 'POST' }).catch(() => {});
-    location.href = '/';
-  };
+  bar.hidden = !who;
+  if (!who) return;
+
+  $('#who-name').textContent = who.name + (isTrainer() ? ' · тренер' : '');
+
+  const v = $('#who-view');
+  if (isTrainer() && viewId) {
+    v.hidden = false;
+    v.innerHTML = '<span>Клиент: <b>' + esc(viewName) + '</b></span>' +
+      '<button class="mini" id="back-clients" type="button">‹ К списку</button>';
+    $('#back-clients').onclick = () => { closeClient(); vibrate(8); };
+  } else {
+    v.hidden = true;
+    v.innerHTML = '';
+  }
 }
-
-/* ─────────── кто мы + список клиентов для тренера ─────────── */
 
 async function initWho() {
   const d = await api('/me');
   who = d.client;
-
-  if (who.role !== 'trainer') { renderWho(); return; }
-
-  const c = await api('/clients');
-  const list = (c.clients || []).filter(x => x.role !== 'trainer');
-  if (!list.length) { renderWho(); return; }
-
-  if (!viewId || !list.some(x => x.id === viewId)) viewId = list[0].id;
-  who = list.find(x => x.id === viewId);
-  renderWho();
-  renderSwitcher(list);
+  ['#who-box', '#switch-box'].forEach(s => { const el = $(s); if (el) el.hidden = true; });
+  renderTopbar();
+  if (typeof applyRole === 'function') applyRole();
 }
 
-function renderSwitcher(list) {
-  const box = $('#switch-box'); if (!box) return;
-  box.hidden = false;
-  box.innerHTML = '<div class="sw-label">Клиент</div><div class="sw-chips">' +
-    list.map(c => '<button class="sw-chip' + (c.id === viewId ? ' on' : '') +
-      '" data-id="' + esc(c.id) + '">' + esc(c.name) + '</button>').join('') +
-    '</div>';
-  box.onclick = (e) => {
-    const b = e.target.closest('.sw-chip'); if (!b) return;
-    viewId = b.dataset.id;
-    who = list.find(x => x.id === viewId) || who;
-    renderWho();
-    [...box.querySelectorAll('.sw-chip')].forEach(x => x.classList.toggle('on', x === b));
-    lastSync = 0;
-    syncNow(true);
-    vibrate(8);
-  };
+async function initSync() {
+  await initWho();
+  await syncNow(true);
 }
 
-/* ─────────── окно «Синхронизация» вместо GitHub ─────────── */
-
+/* ───── окно «Облако» вместо старого GitHub ───── */
 const sheetSync = $('#sheet-sync');
 if (sheetSync) {
   sheetSync.innerHTML =
@@ -191,21 +185,21 @@ if (sheetSync) {
       '<div class="grab" aria-hidden="true"></div>' +
       '<header class="sheet-head">' +
         '<button class="x" data-close aria-label="Назад">‹</button>' +
-        '<h2>Синхронизация</h2><span class="spacer"></span>' +
+        '<h2>Облако</h2><span class="spacer"></span>' +
       '</header>' +
-      '<p class="hint">Данные хранятся на сервере KFitness и привязаны к твоему коду. ' +
-        'Заходи с любого телефона — программы и веса будут на месте.</p>' +
+      '<p class="hint">Данные хранятся в облаке KFitness и привязаны к коду входа. ' +
+        'Заходи с любого телефона — программы, веса и замеры будут на месте.</p>' +
       '<div class="field"><span>Профиль</span><b id="sync-repo">—</b></div>' +
       '<p class="hint" id="sync-last"></p>' +
-      '<button class="btn full" id="sync-now">Синхронизировать сейчас</button>' +
+      '<button class="btn full" id="sync-now" type="button">Синхронизировать сейчас</button>' +
     '</div>';
   const go = $('#sync-now');
   if (go) go.onclick = () => { syncNow(false); vibrate(10); };
 }
 
-/* ─────────── старт (зовётся из start.js) ─────────── */
-
-async function initSync() {
-  await initWho();
-  await syncNow(true);
+const btnSync = $('#btn-sync');
+if (btnSync) {
+  const b = btnSync.querySelector('b');
+  if (b) b.textContent = 'Облако KFitness';
+  btnSync.onclick = () => { setSyncUi(); openSheet('#sheet-sync'); };
 }
