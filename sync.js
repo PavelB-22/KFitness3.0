@@ -5,7 +5,17 @@ let who = null;          // кто вошёл: { id, name, code, role }
 let viewId = null;       // тренер: id открытого клиента
 let viewName = '';       // тренер: имя открытого клиента
 let lastSync = 0, lastErr = '';
+/* Ключ, который помнит, чей кэш лежит на этом телефоне */
+const OWNER_KEY = 'kfitnes-owner';
 
+/* Полная очистка локальной копии: телефон + IndexedDB */
+async function wipeLocal() {
+  state = blank();
+  const json = JSON.stringify(state);
+  try { localStorage.setItem(STORE, json); } catch (e) {}
+  try { await idb.set(STORE, json); } catch (e) {}
+  lastSync = 0;
+}
 const isTrainer = () => !!(who && who.role === 'trainer');
 /* тренеру синхронизировать нечего, пока он не открыл клиента */
 const canSync = () => !!who && (!isTrainer() || !!viewId);
@@ -141,8 +151,11 @@ function renderTopbar() {
         '<div class="who-view" id="who-view" hidden></div>' +
       '</div>';
     document.body.appendChild(bar);
-    $('#who-out').onclick = async () => {
+      $('#who-out').onclick = async () => {
+      /* сначала досохраняем несохранённое, потом выходим */
+      try { if (pushT) { clearTimeout(pushT); pushT = 0; await syncNow(true); } } catch (e) {}
       try { await fetch('/logout', { method: 'POST' }); } catch (e) {}
+      try { localStorage.removeItem(STORE); localStorage.removeItem(OWNER_KEY); } catch (e) {}
       location.href = '/login.html';
     };
   }
@@ -167,6 +180,14 @@ function renderTopbar() {
 async function initWho() {
   const d = await api('/me');
   who = d.client;
+
+  /* Если на телефоне осталась копия ДРУГОГО аккаунта — выкидываем её,
+     иначе чужие замеры и программы уйдут в этот профиль. */
+  let owner = null;
+  try { owner = localStorage.getItem(OWNER_KEY); } catch (e) {}
+  if (owner && owner !== who.id) await wipeLocal();
+  try { localStorage.setItem(OWNER_KEY, who.id); } catch (e) {}
+
   ['#who-box', '#switch-box'].forEach(s => { const el = $(s); if (el) el.hidden = true; });
   renderTopbar();
   if (typeof applyRole === 'function') applyRole();
