@@ -212,3 +212,58 @@ body:not([data-screen="train"]) #fab-timer{display:none!important}
   border:1px solid rgba(255,255,255,.09);color:#cfcfd4;font-size:14px;font-weight:600;white-space:nowrap}
 .sw-chip.on{background:linear-gradient(135deg,#ff4d5e 0%,#e0112b 55%,#8a0016 100%);
   border-color:transparent;color:#fff;box-shadow:0 6px 20px rgba(255,30,60,.35)}
+/* ═════ KFitness 3.2: шапка, замеры, режим тренера ═════ */
+.top{padding-right:120px}
+.top h1{font-size:clamp(26px,8vw,34px)}
+.topbar{position:absolute;top:calc(var(--safe-t) + 12px);right:16px;z-index:30}
+.topbar-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;max-width:150px}
+.topbar .out{padding:8px 14px;border-radius:12px;font-size:13px;font-weight:700;color:#fff;background:rgba(255,45,69,.14);border:1px solid rgba(255,45,69,.4)}
+.topbar .out:active{transform:scale(.95)}
+.who-name{font-size:12px;font-weight:600;color:var(--mut);text-align:right;line-height:1.25;word-break:break-word}
+.who-view{display:flex;flex-direction:column;align-items:flex-end;gap:6px;font-size:12px;text-align:right}
+
+.sec-h{font-size:13px;font-weight:800;color:var(--mut);text-transform:uppercase;letter-spacing:.08em;margin:22px 0 10px}
+.sec-h.first{margin-top:0}
+.mactions{display:flex;gap:10px;margin:10px 0 0}
+.mactions .btn{flex:1}
+.hint.center{text-align:center;padding:18px 8px;margin:0}
+
+.mdate{display:flex;gap:8px;margin-bottom:14px}
+.mdate input{flex:1;min-width:0;height:50px;background:#000;border:1px solid var(--line);border-radius:14px;color:var(--tx);font-size:16px;font-weight:700;text-align:center;outline:none;color-scheme:dark}
+.mdate input:focus{border-color:var(--red)}
+.mdate .step{width:50px;height:50px;flex:none;border-radius:14px;background:var(--card);border:1px solid var(--line);font-size:24px;font-weight:700}
+.mgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mfield{display:flex;flex-direction:column;gap:5px}
+.mlabel{font-size:12px;font-weight:600;color:var(--mut);padding-left:2px}
+.mwrap{display:flex;align-items:center;height:50px;padding:0 12px;background:#000;border:1px solid var(--line);border-radius:14px;transition:.2s}
+.mwrap:focus-within{border-color:var(--red);box-shadow:0 0 0 3px rgba(255,45,69,.18)}
+.mwrap input{flex:1;min-width:0;background:none;border:0;outline:0;color:var(--tx);font-size:18px;font-weight:800;text-align:right}
+.mwrap em{font-style:normal;font-size:12px;color:var(--mut);margin-left:6px}
+
+.chart-card{padding:12px 10px}
+.mchart{display:block;width:100%;height:auto}
+.mstats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.mstats div{padding:9px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid var(--line);text-align:center}
+.mstats b{display:block;font-size:17px}
+.mstats b.accent{color:var(--red)}
+.mstats span{font-size:10px;color:var(--mut)}
+
+.mtablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:18px;background:var(--card)}
+.mtable{border-collapse:collapse;min-width:100%;font-size:13px}
+.mtable th,.mtable td{padding:10px 12px;text-align:center;white-space:nowrap;border-bottom:1px solid var(--line)}
+.mtable thead th{background:#141418;color:var(--mut);font-size:12px}
+.mtable thead th button{font-weight:800;color:var(--tx);padding:4px 6px;border-radius:8px;background:rgba(255,45,69,.12)}
+.mtable tbody th{position:sticky;left:0;background:#141418;text-align:left;font-weight:700}
+.mtable thead th:first-child{position:sticky;left:0;z-index:1;text-align:left}
+.mtable tr:last-child td,.mtable tr:last-child th{border-bottom:0}
+.mtable .dash{color:#4a4a52}
+
+.tcard{margin-bottom:12px}
+.tcard .btn.full + .btn.full{margin-top:10px}
+.tfield{display:block;margin-bottom:12px}
+.tfield span{display:block;font-size:12px;font-weight:600;color:var(--mut);margin-bottom:6px}
+.tfield input{width:100%;height:50px;padding:0 14px;background:#000;border:1px solid var(--line);border-radius:14px;color:var(--tx);font-size:16px;outline:none}
+.tfield input:focus{border-color:var(--red)}
+.mlist{display:flex;flex-direction:column;gap:8px}
+.mrow{display:flex;align-items:center;gap:12px;padding:13px 14px;border-radius:16px;background:var(--card);border:1px solid var(--line)}
+.mrow span{flex:1;min
