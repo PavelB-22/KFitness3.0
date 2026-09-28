@@ -20,7 +20,7 @@ async function api(path, opt = {}) {
     cache: 'no-store',
     headers: { 'Content-Type': 'application/json', ...(opt.headers || {}) }
   });
-  if (r.status === 401) { location.href = '/'; throw new Error('Нужен вход'); }
+  if (r.status === 401) { location.href = '/login.html'; throw new Error('Нужен вход'); }
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(d.error || ('Сервер ответил ' + r.status));
   return d;
