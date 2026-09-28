@@ -362,3 +362,17 @@ body:not([data-screen="train"]) #fab-timer{display:none!important}
   .mdate{grid-template-columns:44px minmax(0,1fr) 44px}
   .mdate .step{width:44px}
 }
+/* ---------- 15. Таймер отдыха ---------- */
+.ring{position:relative;width:220px;height:220px;margin:4px auto 16px}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring-bg{fill:none;stroke:#1d1d20;stroke-width:12}
+.ring-fg{fill:none;stroke:url(#rg);stroke-width:12;stroke-linecap:round;
+  stroke-dasharray:553;transition:stroke-dashoffset .3s linear}
+.ring-time{position:absolute;inset:0;display:grid;place-items:center;
+  font-size:52px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.ring.done .ring-time{color:var(--red);animation:blink .5s 6 alternate}
+@keyframes blink{to{opacity:.3}}
+.stepper{display:flex;gap:10px;justify-content:center;margin-bottom:12px}
+.stepper button{padding:10px 18px;border-radius:14px;background:var(--card);
+  border:1px solid var(--line);font-weight:700}
+.presets{justify-content:center;flex-wrap:wrap}
