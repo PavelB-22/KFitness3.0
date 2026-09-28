@@ -1,13 +1,15 @@
-/* Kfitnes · старт: спрашиваем сервер, кто мы, и тянем данные */
+/* Kfitnes · старт: кто вошёл, данные, нужный экран */
 (async () => {
   try {
-    await initStorage();      // поднимаем копию с телефона
-    await initSync();         // кто я + данные с сервера
-    renderAll();              // перерисовываем всё
-    const s = state.sel.screen || 'train';
-    showScreen(s);            // возвращаемся на ту вкладку, где были
+    await initStorage();
+    await initSync();
+
+    if (isTrainer()) { showScreen('clients'); return; }
+
+    renderAll();
+    const s = state.sel.screen;
+    showScreen(['train', 'food', 'supp', 'measurements'].includes(s) ? s : 'train');
   } catch (e) {
-    // если сервер не ответил — работаем на том, что есть в телефоне
     renderAll();
   }
 })();
