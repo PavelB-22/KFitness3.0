@@ -1,4 +1,4 @@
-/api/* https://kfitness.nybzik2020022000.workers.dev/api/:splat 200
+/api/* https://kfiitness.nybzik2020022000.workers.dev/api/:splat 200
 /login  /.netlify/functions/login  200
 /me  /.netlify/functions/me  200
 /clients  /.netlify/functions/clients  200
