@@ -359,3 +359,26 @@ body:not([data-screen="train"]) #fab-timer{display:none!important}
     padding-right: 0 !important;
   }
 }
+           /* Замеры: одна колонка на телефоне */
+#measurement-form .mgrid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  width: 100% !important;
+  gap: 12px !important;
+}
+
+#measurement-form .mfield,
+#measurement-form .mwrap {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+#measurement-form .mwrap {
+  overflow: hidden !important;
+}
+
+#measurement-form .mwrap input {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
