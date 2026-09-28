@@ -136,7 +136,7 @@ function tick() {
 }
 
 function startPause() {
-  ctx(); mediaSession(); unlockAudio();          // разблокировка звука первым касанием
+  ctx(); mediaSession();          // разблокировка звука первым касанием
   if (tm.endAt) {                                 // пауза
     tm.left = (tm.endAt - Date.now()) / 1000; tm.endAt = 0;
     clearInterval(tm.id); stopAlerts(); keepAwake(false);
