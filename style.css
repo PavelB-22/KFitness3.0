@@ -282,3 +282,80 @@ body:not([data-screen="train"]) #fab-timer{display:none!important}
 .rb i{width:100%;max-width:28px;min-height:3px;border-radius:6px 6px 0 0;background:linear-gradient(180deg,#ff4d5e,#8a0016)}
 .rb b{font-size:11px;font-weight:800}
 .rb span{font-size:9px;color:var(--mut);text-transform:uppercase}
+           /* ФИНАЛЬНАЯ МОБИЛЬНАЯ ПРАВКА ЗАМЕРОВ */
+#screen-measurements,
+#screen-measurements .card,
+#measurement-form,
+#measurement-form .mgrid,
+#measurement-form .mfield,
+#measurement-form .mwrap {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+/* На телефоне все замеры идут строго одной колонкой */
+#measurement-form .mgrid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  width: 100% !important;
+  gap: 12px !important;
+}
+
+/* Поле с числом и единицей измерения не выходит за границы */
+#measurement-form .mwrap {
+  width: 100% !important;
+  overflow: hidden !important;
+}
+
+#measurement-form .mwrap input {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  font-size: 18px !important;
+}
+
+#measurement-form .mwrap em {
+  flex: 0 0 auto !important;
+}
+
+/* Дата: три элемента всегда помещаются в ширину экрана */
+#measurement-form .mdate {
+  display: grid !important;
+  grid-template-columns: 50px minmax(0, 1fr) 50px !important;
+  width: 100% !important;
+  gap: 8px !important;
+}
+
+#measurement-form .mdate input {
+  width: 100% !important;
+  min-width: 0 !important;
+  padding-left: 4px !important;
+  padding-right: 4px !important;
+  font-size: 16px !important;
+}
+
+/* Шапка не наезжает на заголовок «Замеры» */
+#screen-measurements .top {
+  padding-right: 0 !important;
+}
+
+@media (max-width: 430px) {
+  #topbar {
+    position: absolute !important;
+    top: calc(env(safe-area-inset-top) + 10px) !important;
+    right: 14px !important;
+  }
+
+  #screen-measurements {
+    padding-top: 76px !important;
+  }
+
+  #screen-measurements .top h1 {
+    font-size: 30px !important;
+  }
+
+  #screen-measurements .sub {
+    max-width: 100% !important;
+    padding-right: 0 !important;
+  }
+}
