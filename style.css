@@ -267,3 +267,15 @@ body:not([data-screen="train"]) #fab-timer{display:none!important}
 .mlist{display:flex;flex-direction:column;gap:8px}
 .mrow{display:flex;align-items:center;gap:12px;padding:13px 14px;border-radius:16px;background:var(--card);border:1px solid var(--line)}
 .mrow span{flex:1;min
+           .mrow span{flex:1;min-width:0}
+.mrow b{display:block;font-size:16px}
+.mrow small{font-size:12px;color:var(--mut)}
+.mini{padding:8px 12px;border-radius:11px;font-size:12px;font-weight:700;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--tx);flex:none}
+.mini:active{transform:scale(.95)}
+.mini.del{color:#ff8a96;border-color:rgba(255,45,69,.4);background:rgba(255,45,69,.12)}
+
+.regbars{display:flex;align-items:flex-end;justify-content:space-between;gap:6px;height:120px;padding:12px 10px 8px}
+.rb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%}
+.rb i{width:100%;max-width:28px;min-height:3px;border-radius:6px 6px 0 0;background:linear-gradient(180deg,#ff4d5e,#8a0016)}
+.rb b{font-size:11px;font-weight:800}
+.rb span{font-size:9px;color:var(--mut);text-transform:uppercase}
