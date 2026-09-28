@@ -35,6 +35,12 @@ let mChartKey = 'weight';
         '<button class="btn ghost" id="measurement-del" type="button" hidden>Удалить</button>' +
         '<button class="btn" id="measurement-save" type="button">Сохранить замер</button>' +
       '</div>' +
+      '<h2 class="sec-h">Импорт и выгрузка</h2>' +
+      '<div class="mactions">' +
+        '<button class="btn ghost" id="measurement-load" type="button">Загрузить из файла</button>' +
+        '<button class="btn ghost" id="measurement-dump" type="button">Скачать замеры</button>' +
+      '</div>' +
+      '<input type="file" id="measurement-file" accept=".json,application/json" hidden>' +
       '<h2 class="sec-h">График прогресса</h2>' +
       '<div class="chips small" id="measurement-pick" role="tablist" aria-label="Показатель"></div>' +
       '<div class="card chart-card" id="measurement-chart"></div>' +
@@ -57,6 +63,11 @@ let mChartKey = 'weight';
   }
 
   $('#measurement-save').onclick = () => { saveMeasurement(); vibrate(10); };
+  $('#measurement-load').onclick = () => { $('#measurement-file').click(); vibrate(8); };
+  $('#measurement-dump').onclick = () => { exportMeasurements(); vibrate(8); };
+  $('#measurement-file').onchange = e => {
+    const f = e.target.files[0]; e.target.value = ''; if (f) importMeasurements(f);
+  };
   $('#measurement-del').onclick = () => {
     if (confirm('Удалить замер за ' + shortDate(mFormDate) + '?')) deleteMeasurement();
   };
@@ -227,6 +238,70 @@ function drawBodyChart() {
       '<div><b>' + fmtKg(last) + '</b><span>сейчас, ' + f.unit + '</span></div>' +
       '<div><b class="accent">' + (diff > 0 ? '+' : '') + fmtKg(diff) + '</b><span>изменение</span></div>' +
     '</div>';
+}
+
+/* ───── импорт и выгрузка замеров ─────
+   Файл: { "measurements": [ { "date": "2026-08-09", "v": { "weight": 93.8, ... } } ] }
+   Ключи в v те же, что в BODY: weight, neck, biceps, chest, waist, belly, hips, thigh, calf. */
+
+const MEAS_KEYS = BODY.map(f => f.key);
+
+async function importMeasurements(file) {
+  let doc;
+  try { doc = JSON.parse(await file.text()); }
+  catch (e) { toast('Файл не читается — это точно JSON?'); return; }
+
+  const list = Array.isArray(doc) ? doc
+    : (doc && Array.isArray(doc.measurements)) ? doc.measurements
+    : null;
+
+  if (!list || !list.length) { toast('В файле нет замеров'); return; }
+
+  const store = meas();
+  let added = 0, updated = 0, skipped = 0;
+
+  list.forEach(m => {
+    if (!m || typeof m.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(m.date)) { skipped++; return; }
+    const raw = m.v || m.values || {};
+    const v = {};
+    MEAS_KEYS.forEach(k => {
+      const n = Number(String(raw[k] == null ? '' : raw[k]).replace(',', '.'));
+      if (isFinite(n) && n > 0 && n < 400) v[k] = Math.round(n * 10) / 10;
+    });
+    if (!Object.keys(v).length) { skipped++; return; }
+
+    const i = store.findIndex(x => x.date === m.date);
+    if (i >= 0) { store[i] = { date: m.date, v }; updated++; }
+    else { store.push({ date: m.date, v }); added++; }
+  });
+
+  if (!added && !updated) {
+    toast('Нечего добавлять' + (skipped ? ' — ' + skipped + ' строк не распознано' : ''));
+    return;
+  }
+
+  store.sort((a, b) => a.date.localeCompare(b.date));
+  save();
+  mFormDate = store[store.length - 1].date;
+  renderMeasurements();
+  vibrate(20);
+  toast('Добавлено: ' + added + (updated ? ', обновлено: ' + updated : '') +
+        (skipped ? ', пропущено: ' + skipped : ''));
+}
+
+function exportMeasurements() {
+  const list = meas();
+  if (!list.length) { toast('Замеров пока нет'); return; }
+  const doc = { app: 'kfitnes', type: 'measurements', exported: localDay(), measurements: list };
+  const blob = new Blob([JSON.stringify(doc, null, 1)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'Замеры ' + localDay() + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast('Файл замеров сохранён');
 }
 
 renders.measurements = renderMeasurements;

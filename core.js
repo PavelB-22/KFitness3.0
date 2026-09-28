@@ -13,13 +13,16 @@ const KIND_INFO = {
   supplements: { title: 'Добавки',              one: 'план добавок',         short: 'добавки' }
 };
 
-const blank = () => ({ training: [], food: [], supplements: [], logs: {}, settings: { rest: 90 }, sel: {}, updated: 0 });
+const blank = () => ({ training: [], food: [], supplements: [], measurements: [], logs: {}, settings: { rest: 90 }, sel: {}, updated: 0 });
 
 function normalize(s) {
   s = s && typeof s === 'object' ? s : {};
   const out = { ...blank(), ...s, settings: { rest: 90, ...(s.settings || {}) }, sel: s.sel || {} };
   KINDS.forEach(k => { out[k] = Array.isArray(out[k]) ? out[k].filter(p => p && p.id) : []; });
   if (!out.logs || typeof out.logs !== 'object') out.logs = {};
+  out.measurements = Array.isArray(out.measurements)
+    ? out.measurements.filter(m => m && typeof m.date === 'string' && m.v && typeof m.v === 'object')
+    : [];
   delete out.deleted;
   return out;
 }

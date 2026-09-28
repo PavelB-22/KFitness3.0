@@ -172,13 +172,24 @@ $('#file-restore').addEventListener('change', async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
   try {
     const d = JSON.parse(await f.text());
-    if (!d || typeof d !== 'object' || !(d.training || d.food || d.supplements || d.logs)) throw 0;
+    if (!d || typeof d !== 'object' || !(d.training || d.food || d.supplements || d.measurements || d.logs)) throw 0;
     let n = 0;
     KINDS.forEach(k => (Array.isArray(d[k]) ? d[k] : []).forEach(p => {
       if (p && p.id && (k === 'training' ? Array.isArray(p.days) : Array.isArray(p.sections))) { upsertPlan(k, p); n++; }
     }));
     let w = 0;
     for (const [k, v] of Object.entries(d.logs || {})) { const x = Number(v); if (x > 0 && x < 1000) { state.logs[k] = x; w++; } }
+    /* Замеры: одинаковые даты заменяем, новые добавляем */
+    const mm = Array.isArray(d.measurements) ? d.measurements : [];
+    if (mm.length) {
+      const store = Array.isArray(state.measurements) ? state.measurements : (state.measurements = []);
+      mm.forEach(x => {
+        if (!x || typeof x.date !== 'string' || !x.v || typeof x.v !== 'object') return;
+        const i = store.findIndex(y => y.date === x.date);
+        i >= 0 ? (store[i] = { date: x.date, v: x.v }) : store.push({ date: x.date, v: x.v });
+      });
+      store.sort((a, b) => a.date.localeCompare(b.date));
+    }
     if (d.settings?.rest) state.settings.rest = d.settings.rest;
     save(); renderAll(); renderData();
     toast(`Готово: ${n} ${plural(n, 'программа', 'программы', 'программ')}, ${w} ${plural(w, 'вес', 'веса', 'весов')}`);
