@@ -1,5 +1,8 @@
-/api/*    https://kfiitness.nybzik2020022000.workers.dev/api/:splat   200
-/login    https://kfiitness.nybzik2020022000.workers.dev/login       200
-/me       https://kfiitness.nybzik2020022000.workers.dev/me           200
-/clients  https://kfiitness.nybzik2020022000.workers.dev/clients     200
-/logout   https://kfiitness.nybzik2020022000.workers.dev/logout      200
+/api/state 200
+/api/days 200
+/api/metrics 200
+/api/health 200
+/login 200
+/me 200
+/clients 200
+/logout 200
