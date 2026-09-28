@@ -181,7 +181,7 @@ function shortDate(iso) {
 function drawBodyChart() {
   const box = $('#measurement-chart');
   const f = BODY.find(x => x.key === mChartKey) || BODY[0];
-  const pts = meas().filter(m => m.v[f.key] != null).map(m => ({ d: m.date, v: m.v[f.key] }));
+    const pts = meas().filter(m => m && m.v && m.v[f.key] != null).map(m => ({ d: m.date, v: m.v[f.key] }));
 
   if (pts.length < 2) {
     box.innerHTML = '<p class="hint center">Для графика «' + f.name + '» нужно минимум 2 замера.</p>';
