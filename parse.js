@@ -7,7 +7,9 @@ async function pdfLines(file) {
   const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
   const lines = [];
   for (let p = 1; p <= pdf.numPages; p++) {
-    const items = (await (await pdf.getPage(p)).getTextContent()).items.filter(i => i.str && i.str.trim());
+    const page = await pdf.getPage(p);
+    const items = (await page.getTextContent()).items.filter(i => i.str && i.str.trim());
+    const links = (await page.getAnnotations().catch(() => [])).filter(a => a.subtype === 'Link' && a.url && a.rect);
     const rows = [];
     items.forEach(i => {
       const y = i.transform[5], x = i.transform[4];
@@ -15,8 +17,17 @@ async function pdfLines(file) {
       if (!r) rows.push(r = { y, parts: [] });
       r.parts.push({ x, s: i.str });
     });
-    rows.sort((a, b) => b.y - a.y).forEach(r =>
-      lines.push(r.parts.sort((a, b) => a.x - b.x).map(p => p.s).join(' ').replace(/\s+/g, ' ').trim()));
+    /* Ссылка «видео» → строка, у которой она стоит по высоте. Кладём метку в конец строки */
+    links.forEach(a => {
+      const y1 = Math.min(a.rect[1], a.rect[3]), h = Math.abs(a.rect[3] - a.rect[1]), base = y1 + h * 0.25;
+      let best = null;
+      rows.forEach(r => { const d = Math.abs(r.y - base); if (d <= h + 4 && (!best || d < best.d)) best = { r, d }; });
+      if (best && !best.r.video) best.r.video = a.url;
+    });
+    rows.sort((a, b) => b.y - a.y).forEach(r => {
+      const t = r.parts.sort((a, b) => a.x - b.x).map(p => p.s).join(' ').replace(/\s+/g, ' ').trim();
+      lines.push(t + (r.video ? ' ⟦v:' + encodeURIComponent(r.video) + '⟧' : ''));
+    });
   }
   return joinLines(lines.map(clean).filter(Boolean));
 }
@@ -34,8 +45,8 @@ function joinLines(lines) {
   lines.forEach(l => {
     const prev = out[out.length - 1];
     if (prev !== undefined && /^\d{1,2}[.)]$/.test(prev)) { out[out.length - 1] = prev + ' ' + l; return; }
-    const open = prev && (prev.split('(').length > prev.split(')').length);
-    if (prev && (open || (/^[а-яё(]/.test(l) && !/^(или|вариант)/i.test(l) && !/[.:!]$/.test(prev)))) { out[out.length - 1] = prev + ' ' + l; return; }
+    const open = prev && (prev.replace(/⟦v:[^⟧]*⟧/g, '').split('(').length > prev.replace(/⟦v:[^⟧]*⟧/g, '').split(')').length);
+    if (prev && (open || (/^[а-яё(]/.test(l) && !/^(или|вариант)/i.test(l) && !/[.:!]$/.test(prev.replace(/\s*⟦v:[^⟧]*⟧/g, ''))))) { out[out.length - 1] = prev + ' ' + l; return; }
     out.push(l);
   });
   return out;
@@ -65,6 +76,10 @@ function parseTraining(lines) {
   const days = [], notes = [];
   let day = null, last = null;
   lines.forEach(l => {
+    /* вытаскиваем ссылку на видео (из PDF-ссылки или обычный текст https://...) */
+    let video = '';
+    l = l.replace(/\s*⟦v:([^⟧]*)⟧/g, (_, u) => { try { video = decodeURIComponent(u); } catch (e) { video = u; } return ''; });
+    if (!video) { const um = l.match(/https?:\/\/[^\s)]+/); if (um) { video = um[0]; l = l.replace(um[0], '').trim(); } }
     if (JUNK.test(l)) return;
     const dm = l.match(/^День\s*(\d+)/i);
     if (dm) { days.push(day = { title: `День ${dm[1]}`, exercises: [] }); last = null; return; }
@@ -78,10 +93,11 @@ function parseTraining(lines) {
         rest = rest.slice(0, sm.index);
       }
       const name = rest.replace(/[\s,.-]+$/, '').trim();
-      if (name) day.exercises.push(last = { name, scheme, group: guessGroup(name), ...(note ? { note } : {}) });
+      if (name) day.exercises.push(last = { name, scheme, group: guessGroup(name), ...(note ? { note } : {}), ...(video ? { video } : {}) });
       return;
     }
     // Строка-продолжение длинного названия (перенос в PDF)
+    if (video && day && last && !last.video) last.video = video;
     if (day && last && !last.scheme && /^[а-яё]/.test(l)) {
       const sm = l.match(SCHEME);
       if (sm) { last.name += ' ' + l.slice(0, sm.index).trim(); last.scheme = sm[1].replace(/\s+/g, '').replace(/[хx×]/g, '*'); }

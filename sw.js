@@ -1,9 +1,9 @@
 /* Офлайн-кэш. Данные сервера не кэшируем, чтобы профили не смешивались. */
-const CACHE = 'kfitnes-v3.7';
+const CACHE = 'kfitnes-v3.8';
 const NO_CACHE = ['/login', '/logout', '/me', '/clients', '/analytics', '/api/'];
 const FILES = [
   './', './index.html', './login.html', './style.css?v=3.2',
-  './core.js?v=3.6', './parse.js?v=3.2', './train.js?v=3.2', './plans.js?v=3.2',
+  './core.js?v=3.6', './parse.js?v=3.8', './train.js?v=3.8', './video.js?v=3.8', './plans.js?v=3.2',
   './timer.js?v=3.2', './manage.js?v=3.6', './measurements.js?v=3.6',
   './sync.js?v=3.2', './trainer.js?v=3.2', './push.js?v=3.7', './start.js?v=3.2',
   './pdf.min.js', './pdf.worker.min.js', './manifest.webmanifest',
