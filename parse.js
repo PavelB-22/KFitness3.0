@@ -3,7 +3,7 @@
 if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.js';
 
 /* PDF → массив строк. Склеиваем кусочки текста по высоте строки */
-async function pdfLines(file) {
+async function pdfLines(file, kind) {
   const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
   const lines = [];
   for (let p = 1; p <= pdf.numPages; p++) {
@@ -30,7 +30,7 @@ async function pdfLines(file) {
       lines.push(t + vs.map(v => ' ⟦v:' + encodeURIComponent(v.url) + '⟧').join(''));
     });
   }
-  return joinLines(lines.map(clean).filter(Boolean));
+  return joinLines(lines.map(clean).filter(Boolean), kind);
 }
 
 /* Чистим мусор: логотипы, маркеры списков, слово «ВИДЕО» */
@@ -41,10 +41,20 @@ const clean = s => s
   .replace(/\s+/g, ' ').trim();
 
 /* Склейка строк, которые PDF разорвал: «1.» + «текст», перенос длинной фразы */
-function joinLines(lines) {
+const HEAD_LINE = /^(вариант(?![а-яё])|или$|приготовлени|из предложенных|дополнительно$)/i;
+const DONE_ITEM = /(\d|(?:^|[^а-яёa-z])(?:г|гр|кг|мл|л|шт|мг|мкг|ч\.?\s?л|ст\.?\s?л|капсул[а-яё]*|кап|таб[а-яё]*|ломтик[а-яё]*|порци[а-яё]*|штук[а-яё]*|грамм[а-яё]*)\.?|\))\s*$/i;
+function joinLines(lines, kind) {
   const out = [];
+  const food = kind === 'food' || kind === 'supp';
   lines.forEach(l => {
     const prev = out[out.length - 1];
+    /* питание и добавки: заголовки и готовые пункты («50 г») никогда не клеим к соседям */
+    if (food && prev !== undefined && !/^\d{1,2}[.)]$/.test(prev)) {
+      const bare = x => x.replace(/:$/, '').trim();
+      const isHead = x => HEAD_LINE.test(bare(x)) || FOOD_SEC.test(bare(x)) || (SUPP_SEC.test(bare(x)) && bare(x).length < 40);
+      const open0 = prev.split('(').length > prev.split(')').length;
+      if (isHead(l) || isHead(prev) || /:$/.test(prev) || (!open0 && /^[а-яё]/.test(l) && DONE_ITEM.test(prev))) { out.push(l); return; }
+    }
     if (prev !== undefined && /^\d{1,2}[.)]$/.test(prev)) { out[out.length - 1] = prev + ' ' + l; return; }
     const open = prev && (prev.replace(/⟦v:[^⟧]*⟧/g, '').split('(').length > prev.replace(/⟦v:[^⟧]*⟧/g, '').split(')').length);
     if (prev && (open || (/^[а-яё(]/.test(l) && !/^(или|вариант)/i.test(l) && !/[.:!]$/.test(prev.replace(/\s*⟦v:[^⟧]*⟧/g, ''))))) { out[out.length - 1] = prev + ' ' + l; return; }
@@ -128,10 +138,15 @@ function parseSections(lines, kind) {
     if (!l || JUNK.test(l) || /^из предложенных вариантов/i.test(l) || /^дополнительно$/i.test(l)) return;
     const isSec = kind === 'food' ? FOOD_SEC.test(l) : SUPP_SEC.test(l) && l.length < 40;
     if (isSec) { newSec(/^преп/i.test(l) ? 'Препараты' : cap(l)); return; }
-    if (/^вариант\b/i.test(l)) { newOpt(l.replace(/[“"]/g, '«').replace(/”/g, '»')); return; }
+    if (/^вариант(?![а-яё])/i.test(l)) {
+      const vm = l.match(/^(вариант\s*\d+)\s*[:.\-–—]?\s+(.+)$/i);
+      if (vm && /\d+\s*(г|гр|мл|шт|мг|кап|ломт|ч\.?\s?л|ст\.?\s?л)/i.test(vm[2])) { newOpt(cap(vm[1].replace(/\s+/g, ' '))); opt.items.push(vm[2].trim()); return; }
+      newOpt(l.replace(/[“"]/g, '«').replace(/”/g, '»')); return;
+    }
     if (/^или$/i.test(l)) { newOpt('Или'); return; }
     if (!opt) newOpt('');
-    if (/^приготовлени/i.test(l)) { cooking = true; return; }
+    const cm = l.match(/^приготовлени[а-яё]*\s*[:.\-–—]?\s*(.*)$/i);
+    if (cm) { cooking = true; if (cm[1]) opt.note = (opt.note + (opt.note ? ' ' : '') + cm[1]).trim(); return; }
     const item = l.replace(/^\d{1,2}[.)]\s*/, '');
     if (cooking || (item.length > 90 && !/\d+\s*(г|мл|шт|мг|кап)/.test(item)) || /^все ингр/i.test(item)) {
       opt.note = (opt.note + (opt.note ? ' ' : '') + item).trim(); return;
@@ -144,7 +159,7 @@ function parseSections(lines, kind) {
 
 /* Главная функция: файл → план для нужного раздела */
 async function parsePdf(file, kind) {
-  const lines = await pdfLines(file);
+  const lines = await pdfLines(file, kind === 'training' ? 'training' : kind === 'food' ? 'food' : 'supp');
   if (!lines.length) throw new Error('В PDF нет текста (похоже, это картинка)');
   const base = file.name.replace(/\.pdf$/i, '').replace(/^[0-9a-f]{20,}_/i, '').trim();
   if (kind === 'training') {

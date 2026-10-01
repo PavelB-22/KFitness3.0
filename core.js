@@ -27,8 +27,11 @@ function normalize(s) {
   return out;
 }
 
-/* Порядок недель: по номеру в id (gym-2 раньше gym-10) */
-const sortPlans = l => l.sort((a, b) => String(a.id).localeCompare(String(b.id), 'ru', { numeric: true }));
+/* Порядок недель: по номеру в названии (gm4-9 раньше gm4-10), новые встают в конец */
+const planKey = p => String(p.title || p.id).replace(/^(Тренировки|Питание|Добавки)\s*[·:\-]\s*/i, '');
+const sortPlans = l => l.sort((a, b) =>
+  planKey(a).localeCompare(planKey(b), 'ru', { numeric: true, sensitivity: 'base' }) ||
+  String(a.id).localeCompare(String(b.id), 'ru', { numeric: true }));
 
 /* IndexedDB: вторая копия данных на телефоне */
 const idb = {
