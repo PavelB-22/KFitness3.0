@@ -22,11 +22,12 @@ async function pdfLines(file) {
       const y1 = Math.min(a.rect[1], a.rect[3]), h = Math.abs(a.rect[3] - a.rect[1]), base = y1 + h * 0.25;
       let best = null;
       rows.forEach(r => { const d = Math.abs(r.y - base); if (d <= h + 4 && (!best || d < best.d)) best = { r, d }; });
-      if (best && !best.r.video) best.r.video = a.url;
+      if (best) (best.r.vids = best.r.vids || []).push({ x: Math.min(a.rect[0], a.rect[2]), url: a.url });
     });
     rows.sort((a, b) => b.y - a.y).forEach(r => {
       const t = r.parts.sort((a, b) => a.x - b.x).map(p => p.s).join(' ').replace(/\s+/g, ' ').trim();
-      lines.push(t + (r.video ? ' ⟦v:' + encodeURIComponent(r.video) + '⟧' : ''));
+      const vs = (r.vids || []).sort((a, b) => a.x - b.x).filter((v, i, arr) => !arr.slice(0, i).some(w => w.url === v.url));
+      lines.push(t + vs.map(v => ' ⟦v:' + encodeURIComponent(v.url) + '⟧').join(''));
     });
   }
   return joinLines(lines.map(clean).filter(Boolean));
@@ -57,10 +58,10 @@ const cap = s => s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s;
 /* Группа мышц по названию упражнения */
 const GROUP_RULES = [
   ['Пресс', /пресс|скручиван|планк|v.?складк|колени к груди|подъ[её]м (ног|корпуса)|ножницы|велосипед/],
-  ['Трицепс', /трицепс|французск|обратн[а-я]* отжиман|разгибани[а-я]* рук|узким хватом.*жим|брусья/],
+  ['Трицепс', /трицепс|кик.?б[эе]к|французск|обратн[а-я]* отжиман|разгибани[а-я]* рук|узким хватом.*жим|брусья/],
   ['Бицепс', /бицепс|молот|сгибани[а-я]* рук|скотт/],
-  ['Плечи', /дельт|плеч|махи|арнольд|жим (штанги |гантелей )?(сидя |стоя )?(вверх|над головой)|армейск|протяжк|разведени[а-я]* .*в стороны|жим со жгутом вверх/],
-  ['Спина', /спин|тяг[а-я]* (верхн|горизонт|вертикал|гантел|штанги в наклон|блока|жгута|резинки|т-гриф)|подтягиван|гиперэкст|ласточк|пуловер|шраги/],
+  ['Плечи', /дельт|плеч|махи|фронтальн[а-я]* подъ[её]м|тяг[а-я]* (штанги |гантелей )?к подбородку|жим (штанги |гантелей )?(сидя|из-за головы)|арнольд|жим (штанги |гантелей )?(сидя |стоя )?(вверх|над головой)|армейск|протяжк|разведени[а-я]* .*в стороны|жим со жгутом вверх/],
+  ['Спина', /спин|вертикальн[а-я]* тяг|горизонтальн[а-я]* (рычажн[а-я]* )?тяг|рычажн[а-я]* тяг|тяг[а-я]* (верхн|горизонт|вертикал|гантел|штанги в наклон|блока|жгута|резинки|т-гриф)|подтягиван|гиперэкст|ласточк|пуловер|шраги/],
   ['Грудь', /груд|разведени[а-я]* гантелей л[её]ж|жим (штанги|гантелей)? ?л[её]ж|жим .*под углом|бабочк|сведени[а-я]* рук|кроссовер|отжиман/],
   ['Ноги', /ног|присед|выпад|бедр|ягодич|икр|станов|румынск|мостик|гакк|сгибани[а-я]* ног|разгибани[а-я]* ног|отведени[а-я]* ноги|толчок стены|степ|зашагиван/]
 ];
@@ -71,36 +72,40 @@ function guessGroup(name) {
 }
 
 /* Тренировки: «День N» → упражнения «1. Название 4*12 (примечание)» */
-const SCHEME = /(\d+\s*[*хx×]\s*\d+(?:\s*-\s*\d+)?|\d+(?:\s*-\s*\d+){2,})/;
+const SCHEME = /(\d+\s*[*хx×]\s*(?:\d+(?:\s*-\s*\d+)?(?:\/\d+)?|[mM][aA][xX]|[мМ][аА][кК][сС]\w*)|\d+(?:\s*-\s*\d+){2,})/;
+const normScheme = s => s.replace(/\s+/g, '').replace(/^(\d+)[хx×]/, '$1*').replace(/[мМ][аА][кК][сС]\w*/, 'max');
 function parseTraining(lines) {
   const days = [], notes = [];
   let day = null, last = null;
   lines.forEach(l => {
     /* вытаскиваем ссылку на видео (из PDF-ссылки или обычный текст https://...) */
-    let video = '';
-    l = l.replace(/\s*⟦v:([^⟧]*)⟧/g, (_, u) => { try { video = decodeURIComponent(u); } catch (e) { video = u; } return ''; });
-    if (!video) { const um = l.match(/https?:\/\/[^\s)]+/); if (um) { video = um[0]; l = l.replace(um[0], '').trim(); } }
+    const vids = [];
+    l = l.replace(/\s*⟦v:([^⟧]*)⟧/g, (_, u) => { try { vids.push(decodeURIComponent(u)); } catch (e) { vids.push(u); } return ''; });
+    if (!vids.length) { const um = l.match(/https?:\/\/[^\s)]+/); if (um) { vids.push(um[0]); l = l.replace(um[0], '').trim(); } }
     if (JUNK.test(l)) return;
     const dm = l.match(/^День\s*(\d+)/i);
     if (dm) { days.push(day = { title: `День ${dm[1]}`, exercises: [] }); last = null; return; }
-    const em = l.match(/^(\d{1,2})[.)]\s*(.+)$/);
+    const em = l.match(/^(\d{1,2})(?:[.)]\s*|\s+(?=[А-ЯЁA-Z]))(.+)$/);
     if (day && em) {
       let rest = em[2], scheme = '', note = '';
       const sm = rest.match(SCHEME);
       if (sm) {
-        scheme = sm[1].replace(/\s+/g, '').replace(/[хx×]/g, '*');
+        scheme = normScheme(sm[1]);
         note = rest.slice(sm.index + sm[0].length).replace(/^[\s,.-]+/, '').replace(/^\((.*)\)$/, '$1').trim();
         rest = rest.slice(0, sm.index);
       }
       const name = rest.replace(/[\s,.-]+$/, '').trim();
-      if (name) day.exercises.push(last = { name, scheme, group: guessGroup(name), ...(note ? { note } : {}), ...(video ? { video } : {}) });
+      if (name) day.exercises.push(last = { name, scheme, group: guessGroup(name), ...(note ? { note } : {}), ...(vids.length ? { video: vids[0] } : {}), ...(vids.length > 1 ? { videos: vids } : {}) });
       return;
     }
     // Строка-продолжение длинного названия (перенос в PDF)
-    if (video && day && last && !last.video) last.video = video;
+    if (vids.length && day && last) {
+      const all = [...(last.videos || (last.video ? [last.video] : [])), ...vids].filter((v, i, a) => a.indexOf(v) === i);
+      last.video = all[0]; if (all.length > 1) last.videos = all;
+    }
     if (day && last && !last.scheme && /^[а-яё]/.test(l)) {
       const sm = l.match(SCHEME);
-      if (sm) { last.name += ' ' + l.slice(0, sm.index).trim(); last.scheme = sm[1].replace(/\s+/g, '').replace(/[хx×]/g, '*'); }
+      if (sm) { last.name += ' ' + l.slice(0, sm.index).trim(); last.scheme = normScheme(sm[1]); }
       else last.name += ' ' + l;
       last.group = guessGroup(last.name);
       return;

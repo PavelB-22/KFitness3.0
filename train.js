@@ -50,11 +50,11 @@ function renderTrain() {
         (d ? `<span class="tag ${d > 0 ? 'up' : 'down'}">${d > 0 ? '+' : ''}${fmtKg(d)}</span>` : '');
     }
     const id = `w-${i}`;
-    return `<div class="card ex${e.video ? ' has-video' : ''}" data-i="${i}" style="animation-delay:${i * 40}ms">
+    return `<div class="card ex${e.video || (e.videos && e.videos.length) ? ' has-video' : ''}" data-i="${i}" style="animation-delay:${i * 40}ms">
       <div>
         <div class="ex-name">${i + 1}. ${esc(e.name)}</div>
         <div class="ex-meta">
-          ${e.video ? `<span class="tag play">▶ видео</span>` : ''}
+          ${e.video || (e.videos && e.videos.length) ? `<span class="tag play">▶ видео${e.videos && e.videos.length > 1 ? ' ×' + e.videos.length : ''}</span>` : ''}
           ${e.scheme ? `<span class="tag red">${esc(e.scheme)}</span>` : ''}
           <span class="tag">${esc(e.group || '')}</span>
           ${e.note ? `<span class="tag">${esc(e.note)}</span>` : ''}${diff}
@@ -72,7 +72,8 @@ function renderTrain() {
     card.addEventListener('click', ev => {
       if (ev.target.closest('label.w, input')) return;
       const ex = wk.days[day].exercises[+card.dataset.i];
-      if (ex && ex.video && window.openVideo) { vibrate(8); openVideo(ex.video, ex.name); }
+      const src = ex && (ex.videos && ex.videos.length ? ex.videos : ex.video);
+      if (src && window.openVideo) { vibrate(8); openVideo(src, ex.name); }
     });
   });
 
