@@ -18,8 +18,33 @@
   .sheet-body.snap{transition:transform .22s ease}
   /* если приложение открыто внутри браузера: опускаем верхние элементы ниже его панели */
   html.in-browser .topbar{top:calc(var(--safe-t, 0px) + 62px)!important}
-  html.in-browser #app{padding-top:calc(var(--safe-t, 0px) + 134px)!important}`;
+  html.in-browser #app{padding-top:calc(var(--safe-t, 0px) + 134px)!important}
+
+  /* ── нижнее меню «плавало» при прокрутке (iPhone) ── */
+  /* 1) фоновое свечение выходило за экран влево и вправо (-30vw) и расширяло страницу — держим строго по экрану */
+  .glow{left:0!important;right:0!important;top:-30vh!important;inset:-30vh 0 auto 0!important;width:100%!important;overflow:hidden}
+  /* 2) overflow-x:hidden на html и body ломает position:fixed на iOS — clip не создаёт прокрутки */
+  html,body{overflow-x:clip!important;overflow-y:visible;overscroll-behavior-x:none;touch-action:manipulation}
+  @supports not (overflow:clip){html,body{overflow-x:hidden!important}}
+  /* 3) меню и кнопка «+» — на своём слое, не дёргаются во время инерции */
+  .tabbar,.fab{transform:translate3d(0,0,0);-webkit-transform:translate3d(0,0,0);will-change:transform;backface-visibility:hidden}
+  /* 4) длинные слова не растягивают карточки */
+  .card{overflow-wrap:anywhere}`;
   document.head.appendChild(css);
+
+  /* если страницу всё-таки сдвинуло вбок (инерция, двойной тап) — возвращаем на место */
+  let fixing = false;
+  function recentre() {
+    if (fixing) return;
+    fixing = true;
+    requestAnimationFrame(() => {
+      fixing = false;
+      if (window.scrollX) window.scrollTo(0, window.scrollY);
+      const el = document.scrollingElement || document.documentElement;
+      if (el.scrollLeft) el.scrollLeft = 0;
+    });
+  }
+  window.addEventListener('scroll', recentre, { passive: true });
 
   /* свайп вниз: тянем за ручку или шапку (или с самого верха прокрученного списка) */
   let sheet = null, body = null, y0 = 0, dy = 0, live = false;
