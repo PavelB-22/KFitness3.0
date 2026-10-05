@@ -15,7 +15,7 @@ async function pdfLines(file, kind) {
       const y = i.transform[5], x = i.transform[4];
       let r = rows.find(r => Math.abs(r.y - y) < 3);
       if (!r) rows.push(r = { y, parts: [] });
-      r.parts.push({ x, s: i.str });
+      r.parts.push({ x, w: i.width || 0, h: i.height || 10, s: i.str });
     });
     /* Ссылка «видео» → строка, у которой она стоит по высоте. Кладём метку в конец строки */
     links.forEach(a => {
@@ -25,7 +25,16 @@ async function pdfLines(file, kind) {
       if (best) (best.r.vids = best.r.vids || []).push({ x: Math.min(a.rect[0], a.rect[2]), url: a.url });
     });
     rows.sort((a, b) => b.y - a.y).forEach(r => {
-      const t = r.parts.sort((a, b) => a.x - b.x).map(p => p.s).join(' ').replace(/\s+/g, ' ').trim();
+      /* Пробел ставим только если между кусками есть настоящий зазор. Если зазор ~0, библиотека
+         просто разрезала слово или число на части («кроссовер|е», «5|.»): склеиваем вплотную. */
+      let t = '', end = null;
+      r.parts.sort((a, b) => a.x - b.x).forEach(p => {
+        const gap = end === null ? 0 : p.x - end;
+        if (t && gap > Math.max(0.8, p.h * 0.12) && !/\s$/.test(t) && !/^\s/.test(p.s)) t += ' ';
+        t += p.s;
+        end = p.x + p.w;
+      });
+      t = t.replace(/\s+/g, ' ').trim();
       const vs = (r.vids || []).sort((a, b) => a.x - b.x).filter((v, i, arr) => !arr.slice(0, i).some(w => w.url === v.url));
       lines.push(t + vs.map(v => ' ⟦v:' + encodeURIComponent(v.url) + '⟧').join(''));
     });
@@ -35,6 +44,8 @@ async function pdfLines(file, kind) {
 
 /* Чистим мусор: логотипы, маркеры списков, слово «ВИДЕО» */
 const clean = s => s
+  .replace(/^(\d{1,2})\s+([.)])/, '$1$2')
+  .replace(/(\d)\s+\*\s*(\d)/g, '$1*$2')
   .replace(/[\uf000-\uf0ff•●▪■◦]/g, '')
   .replace(/\(?\s*(ВИДЕО|видео)\s*\)?/g, ' ')
   .replace(/\(\s*\)/g, '')
@@ -82,33 +93,57 @@ function guessGroup(name) {
 }
 
 /* Тренировки: «День N» → упражнения «1. Название 4*12 (примечание)» */
-const SCHEME = /(\d+\s*[*хx×]\s*(?:\d+(?:\s*-\s*\d+)?(?:\/\d+)?|[mM][aA][xX]|[мМ][аА][кК][сС]\w*)|\d+(?:\s*-\s*\d+){2,})/;
+const SCHEME = /(\d+\s*[*хx×]\s*(?:\d+(?:\s*-\s*\d+)?(?:\/\d+)?|[mM][aA][xX]|[мМ][аА][кК][сС]\w*)|\d+(?:\s*[-/]\s*\d+){2,})/;
 const normScheme = s => s.replace(/\s+/g, '').replace(/^(\d+)[хx×]/, '$1*').replace(/[мМ][аА][кК][сС]\w*/, 'max');
 function parseTraining(lines) {
   const days = [], notes = [];
-  let day = null, last = null;
+  let day = null, last = null, ended = false;
+  const STOP = /^(внимани|важно|примечани|комментари|рекомендаци|совет)/i;
+  const DAY = /^(?:д[еe]нь|тренировка|day)\s*(?:№|#)?\s*(\d+)/i;
+  /* «1.», «2 », «3)», «4-», «5,», «5 .» перед названием: любой вариант, лишь бы дальше шла буква */
+  const NUM = /^[\s•*\-–—]*(?:(\d{1,2})\s*[.)\-–—:,]*\s*)?([A-Za-zА-Яа-яЁё].*)$/;
+  const mkEx = (rest, vids) => {
+    let scheme = '', note = '';
+    const sm = rest.match(SCHEME);
+    if (sm) {
+      scheme = normScheme(sm[1]);
+      note = rest.slice(sm.index + sm[0].length).replace(/^[\s,.-]+/, '').replace(/^\((.*)\)$/, '$1').trim();
+      rest = rest.slice(0, sm.index);
+    }
+    const name = rest.replace(/[\s,.:;–—-]+$/, '').replace(/^[\s,.:;–—-]+/, '').replace(/\s+/g, ' ').trim();
+    if (!name || !/[A-Za-zА-Яа-яЁё]{2}/.test(name)) return null;
+    return { name, scheme, group: guessGroup(name), ...(note ? { note } : {}), ...(vids.length ? { video: vids[0] } : {}), ...(vids.length > 1 ? { videos: vids } : {}) };
+  };
   lines.forEach(l => {
-    /* вытаскиваем ссылку на видео (из PDF-ссылки или обычный текст https://...) */
+    /* ссылка на видео: из PDF-ссылки или обычный текст https://... */
     const vids = [];
     l = l.replace(/\s*⟦v:([^⟧]*)⟧/g, (_, u) => { try { vids.push(decodeURIComponent(u)); } catch (e) { vids.push(u); } return ''; });
     if (!vids.length) { const um = l.match(/https?:\/\/[^\s)]+/); if (um) { vids.push(um[0]); l = l.replace(um[0], '').trim(); } }
+    l = l.trim();
+    if (!l && !vids.length) return;
     if (JUNK.test(l)) return;
-    const dm = l.match(/^День\s*(\d+)/i);
-    if (dm) { days.push(day = { title: `День ${dm[1]}`, exercises: [] }); last = null; return; }
-    const em = l.match(/^(\d{1,2})(?:[.)]\s*|\s+(?=[А-ЯЁA-Z]))(.+)$/);
-    if (day && em) {
-      let rest = em[2], scheme = '', note = '';
-      const sm = rest.match(SCHEME);
-      if (sm) {
-        scheme = normScheme(sm[1]);
-        note = rest.slice(sm.index + sm[0].length).replace(/^[\s,.-]+/, '').replace(/^\((.*)\)$/, '$1').trim();
-        rest = rest.slice(0, sm.index);
-      }
-      const name = rest.replace(/[\s,.-]+$/, '').trim();
-      if (name) day.exercises.push(last = { name, scheme, group: guessGroup(name), ...(note ? { note } : {}), ...(vids.length ? { video: vids[0] } : {}), ...(vids.length > 1 ? { videos: vids } : {}) });
-      return;
+
+    const dm = l.match(DAY);
+    if (dm) { days.push(day = { title: `День ${dm[1]}`, exercises: [] }); last = null; ended = false; return; }
+    if (STOP.test(l)) { ended = true; last = null; return; }   // «ВНИМАНИЕ!!!» и всё, что после: не упражнения
+    if (ended) return;
+
+    const m = l.match(NUM);
+    const hasNum = !!(m && m[1]);
+    const body = m ? m[2] : l;
+    const hasScheme = SCHEME.test(body);
+    const upper = /^[A-ZА-ЯЁ]/.test(body);
+    const short = body.length <= 110 && body.split(/\s+/).length <= 16;
+    /* упражнение: есть номер, ИЛИ (заглавная буква и есть видео/схема) */
+    const looksEx = m && short && (hasNum || (upper && (vids.length || hasScheme)));
+
+    if (looksEx && !(hasNum && !upper && !vids.length && !hasScheme && last && !last.scheme)) {
+      if (!day) days.push(day = { title: `День ${days.length + 1}`, exercises: [] });
+      const ex = mkEx(body, vids);
+      if (ex) { day.exercises.push(last = ex); return; }
     }
-    // Строка-продолжение длинного названия (перенос в PDF)
+
+    /* продолжение длинного названия или лишняя ссылка */
     if (vids.length && day && last) {
       const all = [...(last.videos || (last.video ? [last.video] : [])), ...vids].filter((v, i, a) => a.indexOf(v) === i);
       last.video = all[0]; if (all.length > 1) last.videos = all;
@@ -120,7 +155,7 @@ function parseTraining(lines) {
       last.group = guessGroup(last.name);
       return;
     }
-    if (!day) notes.push(l); else if (!em && day.exercises.length === 0) notes.push(l);
+    if (!day) notes.push(l); else if (day.exercises.length === 0) notes.push(l);
   });
   return { days: days.filter(d => d.exercises.length), note: notes.filter(n => n.length > 12).join(' ').slice(0, 300) };
 }
